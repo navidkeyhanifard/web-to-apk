@@ -1,0 +1,90 @@
+name: Build Web-to-APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_name:
+        description: 'نام برنامه'
+        required: true
+        default: 'MyWebApp'
+      package_name:
+        description: 'Package Name (مثال: com.example.app)'
+        required: true
+        default: 'com.example.webapp'
+      website_url:
+        description: 'آدرس وب‌سایت'
+        required: true
+        default: 'https://example.com'
+      icon_url:
+        description: 'آدرس مستقیم آیکون (اختیاری)'
+        required: false
+        default: ''
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+    
+    - name: Install dependencies
+      run: npm install
+    
+    - name: Create Capacitor project
+      run: |
+        npx create-capacitor-app ${{ github.event.inputs.app_name }} \
+          --package-id=${{ github.event.inputs.package_name }} \
+          --web-dir=www
+        cd ${{ github.event.inputs.app_name }}
+        
+        # تنظیم آدرس وب‌سایت
+        cat > www/index.html << EOF
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+                body { margin: 0; padding: 0; overflow: hidden; }
+                iframe { width: 100vw; height: 100vh; border: none; }
+            </style>
+        </head>
+        <body>
+            <iframe src="${{ github.event.inputs.website_url }}" allow="autoplay; camera; microphone"></iframe>
+        </body>
+        </html>
+        EOF
+        
+        # تنظیم آیکون اگر آدرس داده شده
+        if [ -n "${{ github.event.inputs.icon_url }}" ]; then
+          curl -o app/src/main/res/mipmap-hdpi/ic_launcher.png "${{ github.event.inputs.icon_url }}"
+        fi
+    
+    - name: Sync and build Android
+      run: |
+        cd ${{ github.event.inputs.app_name }}
+        npx cap add android
+        npx cap sync
+        cd android
+        ./gradlew assembleRelease
+    
+    - name: Upload APK
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ github.event.inputs.app_name }}-release
+        path: ${{ github.event.inputs.app_name }}/android/app/build/outputs/apk/release/*.apk
